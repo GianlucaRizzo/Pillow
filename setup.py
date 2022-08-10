@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # > pyroma .
 # ------------------------------
 # Checking .
@@ -15,11 +15,8 @@ import subprocess
 import sys
 import warnings
 
-from setuptools import Extension
-from setuptools import __version__ as setuptools_version
-from setuptools import setup
+from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
-
 
 def get_version():
     version_file = "src/PIL/_version.py"
@@ -28,6 +25,7 @@ def get_version():
     return locals()["__version__"]
 
 
+NAME = "Pillow"
 PILLOW_VERSION = get_version()
 FREETYPE_ROOT = None
 HARFBUZZ_ROOT = None
@@ -40,7 +38,7 @@ TIFF_ROOT = None
 ZLIB_ROOT = None
 FUZZING_BUILD = "LIB_FUZZING_ENGINE" in os.environ
 
-if sys.platform == "win32" and sys.version_info >= (3, 12):
+if sys.platform == "win32" and sys.version_info >= (3, 10):
     import atexit
 
     atexit.register(
@@ -53,6 +51,7 @@ if sys.platform == "win32" and sys.version_info >= (3, 12):
         )
     )
 
+HPY_ABI = 'cpython' if sys.implementation.name == 'cpython' else 'universal'
 
 _IMAGING = ("decode", "encode", "map", "display", "outline", "path")
 
@@ -169,7 +168,7 @@ def _find_library_dirs_ldconfig():
         # Assuming GLIBC's ldconfig (with option -p)
         # Alpine Linux uses musl that can't print cache
         args = ["/sbin/ldconfig", "-p"]
-        expr = rf".*\({abi_type}.*\) => (.*)"
+        expr = fr".*\({abi_type}.*\) => (.*)"
         env = dict(os.environ)
         env["LC_ALL"] = "C"
         env["LANG"] = "C"
@@ -187,7 +186,7 @@ def _find_library_dirs_ldconfig():
         return []
     [data, _] = p.communicate()
     if isinstance(data, bytes):
-        data = data.decode("latin1")
+        data = data.decode()
 
     dirs = []
     for dll in re.findall(expr, data):
@@ -252,34 +251,28 @@ def _cmd_exists(cmd):
 
 
 def _pkg_config(name):
-    command = os.environ.get("PKG_CONFIG", "pkg-config")
-    for keep_system in (True, False):
-        try:
-            command_libs = [command, "--libs-only-L", name]
-            command_cflags = [command, "--cflags-only-I", name]
-            stderr = None
-            if keep_system:
-                command_libs.append("--keep-system-libs")
-                command_cflags.append("--keep-system-cflags")
-                stderr = subprocess.DEVNULL
-            if not DEBUG:
-                command_libs.append("--silence-errors")
-                command_cflags.append("--silence-errors")
-            libs = (
-                subprocess.check_output(command_libs, stderr=stderr)
-                .decode("utf8")
-                .strip()
-                .replace("-L", "")
-            )
-            cflags = (
-                subprocess.check_output(command_cflags)
-                .decode("utf8")
-                .strip()
-                .replace("-I", "")
-            )
-            return libs, cflags
-        except Exception:
-            pass
+    try:
+        command = os.environ.get("PKG_CONFIG", "pkg-config")
+        command_libs = [command, "--libs-only-L", name]
+        command_cflags = [command, "--cflags-only-I", name]
+        if not DEBUG:
+            command_libs.append("--silence-errors")
+            command_cflags.append("--silence-errors")
+        libs = (
+            subprocess.check_output(command_libs)
+            .decode("utf8")
+            .strip()
+            .replace("-L", "")
+        )
+        cflags = (
+            subprocess.check_output(command_cflags)
+            .decode("utf8")
+            .strip()
+            .replace("-I", "")
+        )
+        return (libs, cflags)
+    except Exception:
+        pass
 
 
 class pil_build_ext(build_ext):
@@ -412,27 +405,6 @@ class pil_build_ext(build_ext):
                 self.extensions.remove(extension)
                 break
 
-    def get_macos_sdk_path(self):
-        try:
-            sdk_path = (
-                subprocess.check_output(["xcrun", "--show-sdk-path"])
-                .strip()
-                .decode("latin1")
-            )
-        except Exception:
-            sdk_path = None
-        if (
-            not sdk_path
-            or sdk_path == "/Applications/Xcode.app/Contents/Developer"
-            "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
-        ):
-            commandlinetools_sdk_path = (
-                "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
-            )
-            if os.path.exists(commandlinetools_sdk_path):
-                sdk_path = commandlinetools_sdk_path
-        return sdk_path
-
     def build_extensions(self):
 
         library_dirs = []
@@ -560,7 +532,15 @@ class pil_build_ext(build_ext):
                 _add_directory(library_dirs, "/usr/X11/lib")
                 _add_directory(include_dirs, "/usr/X11/include")
 
-            sdk_path = self.get_macos_sdk_path()
+            # SDK install path
+            try:
+                sdk_path = (
+                    subprocess.check_output(["xcrun", "--show-sdk-path"])
+                    .strip()
+                    .decode("latin1")
+                )
+            except Exception:
+                sdk_path = None
             if sdk_path:
                 _add_directory(library_dirs, os.path.join(sdk_path, "usr", "lib"))
                 _add_directory(include_dirs, os.path.join(sdk_path, "usr", "include"))
@@ -579,11 +559,7 @@ class pil_build_ext(build_ext):
                 # headers are at $PREFIX/include
                 # user libs are at $PREFIX/lib
                 _add_directory(
-                    library_dirs,
-                    os.path.join(
-                        os.environ["ANDROID_ROOT"],
-                        "lib" if struct.calcsize("l") == 4 else "lib64",
-                    ),
+                    library_dirs, os.path.join(os.environ["ANDROID_ROOT"], "lib")
                 )
 
         elif sys.platform.startswith("netbsd"):
@@ -852,7 +828,6 @@ class pil_build_ext(build_ext):
             sys.platform == "win32"
             and sys.version_info < (3, 9)
             and not (PLATFORM_PYPY or PLATFORM_MINGW)
-            and int(setuptools_version.split(".")[0]) < 60
         ):
             defs.append(("PILLOW_VERSION", f'"\\"{PILLOW_VERSION}\\""'))
         else:
@@ -907,7 +882,7 @@ class pil_build_ext(build_ext):
         else:
             self._remove_extension("PIL._webp")
 
-        tk_libs = ["psapi"] if sys.platform in ("win32", "cygwin") else []
+        tk_libs = ["psapi"] if sys.platform == "win32" else []
         self._update_extension("PIL._imagingtk", tk_libs)
 
         build_ext.build_extensions(self)
@@ -985,24 +960,31 @@ for src_file in _IMAGING:
 for src_file in _LIB_IMAGING:
     files.append(os.path.join("src/libImaging", src_file + ".c"))
 ext_modules = [
-    Extension("PIL._imaging", files),
+    #Extension("PIL._imaging", files),
     Extension("PIL._imagingft", ["src/_imagingft.c"]),
     Extension("PIL._imagingcms", ["src/_imagingcms.c"]),
     Extension("PIL._webp", ["src/_webp.c"]),
     Extension("PIL._imagingtk", ["src/_imagingtk.c", "src/Tk/tkImaging.c"]),
-    Extension("PIL._imagingmath", ["src/_imagingmath.c"]),
+    #Extension("PIL._imagingmath", ["src/_imagingmath.c"]),
     Extension("PIL._imagingmorph", ["src/_imagingmorph.c"]),
 ]
 
 try:
     setup(
+        #name=NAME,
         version=PILLOW_VERSION,
+        #python_requires=">=3.6",
         cmdclass={"build_ext": pil_build_ext},
+        hpy_ext_modules=[Extension("PIL._imaging", files),
+            Extension("PIL._imagingmath", ["src/_imagingmath.c"])],
         ext_modules=ext_modules,
-        include_package_data=True,
+        #include_package_data=True,
         packages=["PIL"],
         package_dir={"": "src"},
+        #keywords=["Imaging"],
         zip_safe=not (debug_build() or PLATFORM_MINGW),
+        setup_requires=['hpy'],
+        hpy_abi=HPY_ABI,
     )
 except RequiredDependencyException as err:
     msg = f"""
