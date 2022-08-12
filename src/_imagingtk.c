@@ -13,6 +13,8 @@
  */
 
 #include "Python.h"
+#include "hpy.h"
+
 #include "libImaging/Imaging.h"
 
 #include "Tk/_tkmini.h"
@@ -31,49 +33,53 @@ typedef struct {
     PyObject_HEAD Tcl_Interp *interp;
 } TkappObject;
 
-static PyObject *
-_tkinit(PyObject *self, PyObject *args) {
+HPyDef_METH(tkinit, "tkinit", tkinit_impl, HPyFunc_VARARGS)
+static HPy tkinit_impl(HPyContext *ctx, HPy self, HPy *args, HPy_ssize_t nargs) {
+    HPy h_interp;
     Tcl_Interp *interp;
 
-    PyObject *arg;
+    HPy arg;
     int is_interp;
-    if (!PyArg_ParseTuple(args, "Oi", &arg, &is_interp)) {
-        return NULL;
+    if (!HPyArg_Parse(ctx, NULL, args, nargs, "Oi", &arg, &is_interp)) { 
+        return HPy_NULL;
     }
 
     if (is_interp) {
-        interp = (Tcl_Interp *)PyLong_AsVoidPtr(arg);
+        interp = (Tcl_Interp *)PyLong_AsVoidPtr(HPy_AsPyObject(ctx, arg));
     } else {
+        //HPy h_app;
         TkappObject *app;
         /* Do it the hard way.  This will break if the TkappObject
         layout changes */
-        app = (TkappObject *)PyLong_AsVoidPtr(arg);
+        app = (TkappObject *)PyLong_AsVoidPtr(HPy_AsPyObject(ctx, arg));
         interp = app->interp;
     }
 
     /* This will bomb if interp is invalid... */
     TkImaging_Init(interp);
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    return HPy_Dup(ctx, ctx->h_None);
 }
 
-static PyMethodDef functions[] = {
+static HPyDef *module_defines[] = {
     /* Tkinter interface stuff */
-    {"tkinit", (PyCFunction)_tkinit, 1},
-    {NULL, NULL} /* sentinel */
+    &tkinit,
+    NULL,/* sentinel */
 };
 
-PyMODINIT_FUNC
-PyInit__imagingtk(void) {
-    static PyModuleDef module_def = {
-        PyModuleDef_HEAD_INIT,
-        "_imagingtk", /* m_name */
-        NULL,         /* m_doc */
-        -1,           /* m_size */
-        functions,    /* m_methods */
+HPy_MODINIT(_imagingtk)
+static HPy init__imagingtk_impl(HPyContext *ctx) {
+    
+    static HPyModuleDef module_def = {
+        .name = "_imagingtk", /* m_name */
+        .doc = NULL,         /* m_doc */
+        .size = -1,           /* m_size */
+        .defines = module_defines,    /* m_methods */
     };
-    PyObject *m;
-    m = PyModule_Create(&module_def);
-    return (load_tkinter_funcs() == 0) ? m : NULL;
+
+    HPy h_module = HPyModule_Create(ctx, &module_def);
+    if(HPy_IsNull(h_module))
+        return HPy_NULL;
+    
+    return (load_tkinter_funcs() == 0) ? h_module : HPy_NULL;
 }
