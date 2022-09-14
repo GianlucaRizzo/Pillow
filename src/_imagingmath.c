@@ -279,9 +279,9 @@ HPy_MODINIT(_imagingmath)
 static HPy init__imagingmath_impl(HPyContext *ctx) {
 
     static HPyModuleDef module_def = {
-        .name = "_imagingmath", 
-        .doc = NULL,           
-        .size = -1,
+        .m_name = "_imagingmath", 
+        .m_doc = NULL,           
+        .m_size = -1,
         .defines = module_defines,
     };
 

@@ -28,6 +28,7 @@ https://www.cazabon.com\n\
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"  // Include before wchar.h so _GNU_SOURCE is set
+#include "hpy.h"
 #include "wchar.h"
 #include "datetime.h"
 
@@ -527,17 +528,17 @@ buildProofTransform(PyObject *self, PyObject *args) {
     return cms_transform_new(transform, sInMode, sOutMode);
 }
 
-static PyObject *
-cms_transform_apply(CmsTransformObject *self, PyObject *args) {
-    Py_ssize_t idIn;
-    Py_ssize_t idOut;
+HPyDef_METH(cms_transform_apply, "cms_transform_apply", cms_transform_apply_impl, HPyFunc_VARARGS)
+static HPy cms_transform_apply_impl(HPyContext *ctx, HPy *self, HPy *args, HPy_ssize_t nargs) {
+    HPy_ssize_t idIn;
+    HPy_ssize_t idOut;
     Imaging im;
     Imaging imOut;
 
     int result;
 
-    if (!PyArg_ParseTuple(args, "nn:apply", &idIn, &idOut)) {
-        return NULL;
+    if (!HPyArg_ParseTuple(ctx, NULL, args, nargs, "nn:apply", &idIn, &idOut)) {
+        return HPy_NULL;
     }
 
     im = (Imaging)idIn;
@@ -545,7 +546,7 @@ cms_transform_apply(CmsTransformObject *self, PyObject *args) {
 
     result = pyCMSdoTransform(im, imOut, self->transform);
 
-    return Py_BuildValue("i", result);
+    return HPy_BuildValue(ctx, "i", result);
 }
 
 /* -------------------------------------------------------------------- */
@@ -1452,9 +1453,14 @@ static PyTypeObject CmsProfile_Type = {
     cms_profile_getsetters,          /*tp_getset*/
 };
 
-static struct PyMethodDef cms_transform_methods[] = {
-    {"apply", (PyCFunction)cms_transform_apply, 1}, {NULL, NULL} /* sentinel */
-};
+//static struct PyMethodDef cms_transform_methods[] = {
+//    {"apply", (PyCFunction)cms_transform_apply, 1}, {NULL, NULL} /* sentinel */
+//};
+
+static HPyDef *cms_transform_defines[]={
+    &cms_transform_apply_impl,
+    NULL
+}
 
 static PyObject *
 cms_transform_getattr_inputMode(CmsTransformObject *self, void *closure) {
@@ -1499,13 +1505,15 @@ static PyTypeObject CmsTransform_Type = {
     0,                                 /*tp_weaklistoffset*/
     0,                                 /*tp_iter*/
     0,                                 /*tp_iternext*/
-    cms_transform_methods,             /*tp_methods*/
+    cms_transform_defines,             /*tp_methods*/
     0,                                 /*tp_members*/
     cms_transform_getsetters,          /*tp_getset*/
 };
 
 static int
-setup_module(PyObject *m) {
+setup_module(HPyContext *ctx, HPy h_module) {
+    
+    PyObject *m = HPy_AsPyObject(ctx, h_module)
     PyObject *d;
     PyObject *v;
     int vn;
@@ -1513,11 +1521,12 @@ setup_module(PyObject *m) {
     CmsProfile_Type.tp_new = PyType_GenericNew;
 
     /* Ready object types */
-    PyType_Ready(&CmsProfile_Type);
-    PyType_Ready(&CmsTransform_Type);
+    HPyType_Ready(ctx, &CmsProfile_Type);
+    HPyType_Ready(ctx, &CmsTransform_Type);
 
-    Py_INCREF(&CmsProfile_Type);
-    PyModule_AddObject(m, "CmsProfile", (PyObject *)&CmsProfile_Type);
+    //Py_INCREF(&CmsProfile_Type);
+    HPy_Dup(ctx, &CmsProfile_Type)
+    PyModule_AddObject(m, "CmsProfile", (PyObject *)HPy_AsPyObject(ctx, &CmsProfile_Type));
 
     d = PyModule_GetDict(m);
 
@@ -1537,22 +1546,24 @@ setup_module(PyObject *m) {
     return 0;
 }
 
-PyMODINIT_FUNC
-PyInit__imagingcms(void) {
-    PyObject *m;
+HPy_MODINIT(_imagingcms)
+static HPy init__imagingcms_impl(HPyContext *ctx) {
 
-    static PyModuleDef module_def = {
-        PyModuleDef_HEAD_INIT,
-        "_imagingcms",    /* m_name */
-        NULL,             /* m_doc */
-        -1,               /* m_size */
-        pyCMSdll_methods, /* m_methods */
+    static HPyModuleDef module_def = {
+        .m_name = "_imagingcms",    /* m_name */
+        .m_doc = NULL,             /* m_doc */
+        .m_size = -1,               /* m_size */
+        .legacy_methods = pyCMSdll_methods, /* m_methods */
     };
 
-    m = PyModule_Create(&module_def);
+    HPy m;
+    m = HPyModule_Create(ctx, &module_def)
+    if(HPy_IsNull(m)){
+        return HPy_NULL;
+    }
 
-    if (setup_module(m) < 0) {
-        return NULL;
+    if (setup_module(ctx, m) < 0) {
+        return HPy_NULL;
     }
 
     PyDateTime_IMPORT;

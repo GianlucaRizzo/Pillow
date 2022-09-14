@@ -45,13 +45,13 @@ static HPy tkinit_impl(HPyContext *ctx, HPy self, HPy *args, HPy_ssize_t nargs) 
     }
 
     if (is_interp) {
-        interp = (Tcl_Interp *)PyLong_AsVoidPtr(HPy_AsPyObject(ctx, arg));
+        interp = (Tcl_Interp *)HPyLong_AsVoidPtr(ctx, arg);
     } else {
         //HPy h_app;
         TkappObject *app;
         /* Do it the hard way.  This will break if the TkappObject
         layout changes */
-        app = (TkappObject *)PyLong_AsVoidPtr(HPy_AsPyObject(ctx, arg));
+        app = (TkappObject *)HPyLong_AsVoidPtr(ctx, arg);
         interp = app->interp;
     }
 
@@ -71,9 +71,9 @@ HPy_MODINIT(_imagingtk)
 static HPy init__imagingtk_impl(HPyContext *ctx) {
     
     static HPyModuleDef module_def = {
-        .name = "_imagingtk", /* m_name */
-        .doc = NULL,         /* m_doc */
-        .size = -1,           /* m_size */
+        .m_name = "_imagingtk", /* m_name */
+        .m_doc = NULL,         /* m_doc */
+        .m_size = -1,           /* m_size */
         .defines = module_defines,    /* m_methods */
     };
 
